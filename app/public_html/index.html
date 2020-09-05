@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>ME-WOW! The Cat Rating App</title>
+	<style>
+		table{
+			border-collapse: collapse;		
+		}
+		td, tr, th{
+			border: 0px solid black;
+		}
+	
+	</style>
+	
+</head>
+<body>
+
+<button id="start">Click me to start seeing cats!</button>
+
+<div>
+	<table>
+		<thead>
+			<tr>
+				<th id=leftCatMsg></th>
+				<th id=rightCatMsg></th>
+			</tr>
+		</thead>
+		<tbody id="catPics">
+			<tr>
+				<td><img id=leftCat></img></td>
+				<td><img id=rightCat></img></td>
+			</tr>
+		</tbody>
+</div>
+</body>
+
+<div id=winningMessage> </div>
+<div><img id=winningCat> </img></div>
+<div class="donut-container"></div>
+
+<!-- needed for the graph visualization library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-selection/1.2.0/d3-selection.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/britecharts@2.10.0/dist/bundled/britecharts.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/britecharts/dist/css/britecharts.min.css" type="text/css" />
+
+
+<script>
+// setup for charts later
+const container = d3.select('.donut-container');
+const donutChart = britecharts.donut();
+//Data that chart will use, placeholder data
+let dataset = [
+    {
+        quantity: 1,
+        percentage: 50,
+        name: 'Your Cat',
+        id: 1
+    },
+    {
+        quantity: 1,
+        percentage: 50,
+        name: 'All Others',
+        id: 2
+    }
+];
+// chart parameters
+let containerWidth = 800;
+donutChart
+    .width(containerWidth)
+    .height(containerWidth/1.8)
+    .externalRadius(containerWidth/5)
+    .internalRadius(containerWidth/10);	
+	
+// sends request to web server when button clicked
+let startButton = document.getElementById("start");
+
+//global variables that persist from state to state
+let curData = [];
+let nextData = [];
+let curCat = 0;
+let numCats = 0;
+let lastCat = 0;
+
+startButton.addEventListener("click", function () {
+	//reset globals
+	curData = [];
+	nextData = [];
+	curCat = 0;
+	numCats = 0;
+	lastCat = 0;
+	clearWin();
+	showCatMsg();
+
+	//get cats from db
+    let url = '/cats';
+    fetch(url).then(function (response) {
+		if(response.status === 200){
+			console.log(response.status)
+			return response.json()
+			.then(function (data){
+				//Do Show 2 cats at a time picker stuff here				
+				console.log("GOOD DATA FROM SERVER:", data);
+				
+				console.log('MAIN GAME MEOW');
+				curData = JSON.parse(data)["cats"];
+				numCats = curData.length;
+
+				//Start the cat game
+				mainGame();
+
+				
+				
+			});
+		}
+		else{
+			console.log(response.status)
+			return response.json()
+			.then(function (data){
+				// BAD HERE ERROR MESSAGE 
+
+				console.log("ERROR FROM SERVER:", data);
+			});
+		}
+    })
+	.catch(function (error){
+		// something went wrong; just log the error
+		console.log(error);
+	});
+});
+
+// Starts off the cat rating
+function mainGame(){
+	console.log(curData);
+	showNextCats(curData);
+}
+
+// displays the two cats on the left and right
+function showNextCats(data){
+	showOnLeft(data[curCat]);
+	showOnRight(data[curCat+1]);
+}
+
+let leftCat = document.getElementById("leftCat");
+leftCat.addEventListener("click", clickLeftCat);
+
+let rightCat = document.getElementById("rightCat");
+rightCat.addEventListener("click", clickRightCat);
+
+function showOnLeft(cat){
+	//console.log(cat);
+	//DISPLAY CAT ON LEFT
+	let leftCat = document.getElementById("leftCat")
+	leftCat.src = cat["url"];
+}
+
+function showOnRight(cat){
+	//console.log(cat);
+	//DISPLAY CAT ON RIGHT
+	let rightCat = document.getElementById("rightCat")
+	rightCat.src = cat["url"];
+}
+
+
+function clickLeftCat() {
+	//CHOSE LEFT CAT
+	// sends data to db that this cat won over the other cat
+	sendResult(curData[curCat], curData[curCat+1]);
+	// push winner to next round
+	nextData.push(curData[curCat]);
+	// showed 2 cats, now increment
+	curCat += 2;
+	// last cat clicked
+	lastCat = curCat;
+	//If cats are still remaining
+	if (curCat < numCats){
+		showNextCats(curData);
+	}
+	else{
+		// remove cat pictures
+		clearPictures();
+	}
+}
+
+
+function clickRightCat() {
+	//CHOSE RIGHT CAT
+	// sends data to db that this cat won over the other cat
+	sendResult(curData[curCat+1], curData[curCat]);
+	// push winner to next round
+	nextData.push(curData[curCat+1]);
+	// showed 2 cats, now increment
+	curCat += 2;
+	// last cat clicked
+	lastCat = curCat+1;
+	//If cats are still remaining
+	if (curCat < numCats){
+		showNextCats(curData);
+	}
+	else{
+		// remove cat pictures
+		clearPictures();
+	}
+}
+
+// Removes the cat pictures
+function clearPictures(){
+	let rightCat = document.getElementById("rightCat")
+	rightCat.src = "";
+	
+	let leftCat = document.getElementById("leftCat")
+	leftCat.src = "";
+	
+	// if there is a next round of cat rating to do
+	console.log(nextData);
+	if (nextData.length >= 2){
+		// repeat, but with cats pushed to next round 
+		numCats = nextData.length;
+		curCat = 0;
+		curData = nextData;
+		nextData = [];
+		showNextCats(curData);
+	}
+	// no more cat rating to do, so winning sequence
+	else{
+		clearCatMsg();
+		showWin(nextData);
+	}
+}
+
+function sendResult(winCat, loseCat){
+	//console.log(winCat.id);
+	//console.log(loseCat.id);
+	
+	//SEND POST TO SERVER WITH IDS
+	let url = '/winner';
+    fetch(url, {
+	  method: 'POST', // or 'PUT'
+	  headers: {
+		'Content-Type': 'application/json',
+	  },
+	  body: JSON.stringify(
+			{
+			"winnerID":winCat.id,
+			"loserID":loseCat.id
+			}
+	  )
+	})
+	.then(function (response){
+		//console.log(response);
+	})
+	.catch(function (error){
+		//console.log(error);
+	});
+}
+
+// clear winning message and picture
+function clearWin(){
+	let winMsg = document.getElementById("winningMessage");
+	if(winMsg.firstChild){
+		winMsg.removeChild(winMsg.firstChild);
+	}
+	
+	let winCat = document.getElementById("winningCat");
+	winCat.src = "";
+	
+}
+
+// show winning message and image
+function showWin(data){
+	let winMsg = document.getElementById("winningMessage");
+	let text = document.createTextNode("ME-WOW YOUR WINNING CAT! CLICK START TO PLAY AGAIN");
+	winMsg.appendChild(text);
+	
+	let winCat = document.getElementById("winningCat")
+	winCat.src = data[0].url;
+	
+	// Send overall winner to db
+	let url = '/winner';
+    fetch(url, {
+	  method: 'POST', // or 'PUT'
+	  headers: {
+		'Content-Type': 'application/json',
+	  },
+	  body: JSON.stringify(
+			{
+			"winnerID":data[0].id,
+			"loserID":data[0].id
+			}
+	  )
+	})
+	.then(function (response){
+		//console.log(response);
+		// create data visualization for graph
+		makeDataVis(data[0].id);
+		
+	})
+	.catch(function (error){
+		//console.log(error);
+	});
+	
+}
+
+// removes left and right cat messages
+function clearCatMsg(){
+	let leftMsg = document.getElementById("leftCatMsg");
+	if(leftMsg.firstChild){
+			leftMsg.removeChild(leftMsg.firstChild);
+	}
+	let rightMsg = document.getElementById("rightCatMsg");
+	if(rightMsg.firstChild){
+			rightMsg.removeChild(rightMsg.firstChild);
+	}
+	
+}
+
+// shows left and right cat messages
+function showCatMsg(){
+	let leftMsg = document.getElementById("leftCatMsg");
+	let lefttext = document.createTextNode("Do you like this cat?");
+	leftMsg.appendChild(lefttext);
+	
+	let rightMsg = document.getElementById("rightCatMsg");
+	let righttext = document.createTextNode("Or is this one better?");
+	rightMsg.appendChild(righttext);
+}
+
+// creates the graph for the winning cat
+function makeDataVis(id){
+	// get the cat data for the winner
+    let url = '/winner';
+    fetch(url).then(function (response) {
+		if(response.status === 200){
+			console.log(response.status)
+			return response.json()
+			.then(function (data){
+
+				catData = JSON.parse(data)["cats"];
+				
+				let totalCat = 0;
+				let winCat = 0;
+				// This is pretty bad
+				// loop through the data and get the total number of wins per cat and wins by the winning cat
+				// I thought  I could do something like 
+				//		"cat" + catData[n].id
+				// to specify the key for the dictionary, but cannot
+				// I definately could have made the table scheme better with a "wins" column instead of
+				// storing the overall wins as the same "cat#" as the ID
+				for (let n = 0; n < catData.length; n++){
+					if(catData[n].id == 1){
+						totalCat += catData[n]["cat1"]
+					}
+					if(catData[n].id == 2){
+						totalCat += catData[n]["cat2"]
+					}
+					if(catData[n].id == 3){
+						totalCat += catData[n]["cat3"]
+					}
+					if(catData[n].id == 4){
+						totalCat += catData[n]["cat4"]
+					}
+					
+					if(catData[n].id == 1 && catData[n].id == id){
+						winCat = catData[n]["cat1"]
+					}
+					if(catData[n].id == 2 && catData[n].id == id){
+						winCat = catData[n]["cat2"]
+					}
+					if(catData[n].id == 3 && catData[n].id == id){
+						winCat = catData[n]["cat3"]
+					}
+					if(catData[n].id == 4 && catData[n].id == id){
+						winCat = catData[n]["cat4"]
+					}
+				}
+				console.log(totalCat)
+				console.log(winCat)
+				// change the dataset to use the data returned from the db
+				dataset[0].percentage = Math.ceil((winCat/totalCat) * 100);
+				dataset[1].percentage = Math.floor(((totalCat - winCat) / totalCat) * 100);
+				dataset[0].quantity = winCat;
+				dataset[1].quantity = totalCat - winCat;
+				container.datum(dataset).call(donutChart);
+
+				
+			});
+		}
+		else{
+			console.log(response.status)
+			return response.json()
+			.then(function (data){
+				// BAD HERE ERROR MESSAGE 
+
+				console.log("ERROR FROM SERVER:", data);
+			});
+		}
+    })
+	.catch(function (error){
+		// something went wrong; just log the error
+		console.log(error);
+	});
+
+
+}
+
+</script>
+
+</body>
+</html>
